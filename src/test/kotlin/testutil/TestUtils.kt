@@ -30,11 +30,9 @@ fun setupTest() {
     // Copy all resource files from "test-input-files" and "test-output-files" dirs into
     // docker mounted working /tmp dir
     copyDirectory(testInputResourcesDir, testInputDir)
-    copyDirectory(testOutputResourcesDir, testOutputDir)
 }
 
 fun cleanupTest() {
-    log.info { testInputDir }
     if (Files.exists(testInputDir)) {
 
         Files.walk(testInputDir).sorted(Comparator.reverseOrder()).forEach { Files.delete(it) }

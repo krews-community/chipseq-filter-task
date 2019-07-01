@@ -9,7 +9,6 @@ fun getResourcePath(relativePath: String): Path {
 
 // Resource Directories
 val testInputResourcesDir = getResourcePath("test-input-files")
-val testOutputResourcesDir = getResourcePath("test-output-files")
 
 // Test Working Directories
 val testDir = Paths.get("/tmp/chipseq-test")!!

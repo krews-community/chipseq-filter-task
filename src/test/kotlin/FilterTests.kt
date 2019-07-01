@@ -1,12 +1,10 @@
 import org.junit.jupiter.api.*
 import step.*
 import testutil.*
-import mu.KotlinLogging
 import testutil.cmdRunner
 import testutil.setupTest
 import util.*
 import org.assertj.core.api.Assertions
-private val log = KotlinLogging.logger {}
 
 class FilterTests {
     @BeforeEach fun setup() = setupTest()
