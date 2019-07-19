@@ -9,7 +9,7 @@ import kotlin.math.max
 private val log = KotlinLogging.logger {}
 data class dup_sambamba(val dupmark_bam:String, val dup_qc:String )
 
-fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:Boolean,nodupRemoval:Boolean,multiMapping:Int,parallelism:Int,output: Path) {
+fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:Boolean,nodupRemoval:Boolean,multiMapping:Int,parallelism:Int,mito_chr_name:String,output: Path) {
     log.info { "Make output Diretory" }
     Files.createDirectories(output.parent)
 
@@ -24,8 +24,9 @@ fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:
 
     }
     var nodup_bam:String
-    var dupS:dup_sambamba = dup_sambamba("","")
-    if(nodupRemoval===true)
+    var dupS = dup_sambamba("","")
+
+    if(nodupRemoval==true)
     {
         nodup_bam =  filt_bam
     } else {
@@ -35,35 +36,37 @@ fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:
 
             dupS= mark_dup_picard(filt_bam,output)
         } else if(dupeMarker===DupMarker.sambamba) {
-             dupS= mark_dup_sambamba(filt_bam,parallelism,output)
+            dupS= mark_dup_sambamba(filt_bam,parallelism,output)
         } else {
             throw Exception("Invalid dup marker ${dupeMarker}")
         }
+
         tmpFiles.add(filt_bam)
-        if(pairedEnd===true)
+        log.info { "Removing Dupes" }
+        if(pairedEnd==true)
         {
             nodup_bam = rm_dup_pe(dupS.dupmark_bam,parallelism,output)
         } else {
             nodup_bam = rm_dup_se(dupS.dupmark_bam,parallelism,output)
         }
         samtools_index(dupS.dupmark_bam)
-        tmpFiles.add(dupS.dupmark_bam)
         tmpFiles.add(dupS.dupmark_bam+".bai")
     }
+    tmpFiles.add(dupS.dupmark_bam)
     val sbi = sambamba_index(nodup_bam,parallelism)
     val sbf  = sambamba_flagstat(nodup_bam,parallelism,output)
     var pbc_qc:String
-    if(nodupRemoval===false)
+    if(nodupRemoval==false)
     {
-        if(pairedEnd===true)
+        if(pairedEnd==true)
         {
-            pbc_qc = pbc_qc_pe(dupS.dupmark_bam,Math.max(1,parallelism-2),output)
+            pbc_qc = pbc_qc_pe(dupS.dupmark_bam,Math.max(1,parallelism-2),mito_chr_name,output)
 
         }else {
-            pbc_qc = pbc_qc_se(dupS.dupmark_bam,output)
+            pbc_qc = pbc_qc_se(dupS.dupmark_bam,mito_chr_name,output)
         }
     }
-    if(nodupRemoval===false) {
+    if(nodupRemoval==false) {
 
         // ('Making mito dup log...')
         val mito_dup_log = make_mito_dup_log(dupS.dupmark_bam, output)
@@ -77,14 +80,14 @@ fun CmdRunner.samtools_index(bam:String):String
     this.run("samtools index $bam")
     return bai
 }
-fun CmdRunner.pbc_qc_pe(bam:String, nth:Int,output: Path):String{
+fun CmdRunner.pbc_qc_pe(bam:String, nth:Int,mito_chr_name:String,output: Path):String{
     val pbc_qc = "${output}.pbc.qc"
     val bamPath = output.parent.resolve(bam)
 
     val nmsrt_bam = sambamba_name_sort(bamPath, nth, output)
     var cmd = "bedtools bamtobed -bedpe -i ${nmsrt_bam} | "
     cmd += "awk \'BEGIN{{OFS='\\t'}}{{print $1,$2,$4,$6,$9,$10}}\' | "
-    cmd += "grep -v 'chrM' | sort | uniq -c | "
+    cmd += "grep -v  \'${mito_chr_name}\' | sort | uniq -c | "
     cmd += "awk \'BEGIN{{mt=0;m0=0;m1=0;m2=0}} ($1==1){{m1=m1+1}} "
     cmd += "($1==2){{m2=m2+1}} {{m0=m0+1}} {{mt=mt+$1}} END{{m1_m2=-1.0; "
     cmd += "if(m2>0) m1_m2=m1/m2; "
@@ -95,12 +98,12 @@ fun CmdRunner.pbc_qc_pe(bam:String, nth:Int,output: Path):String{
     rm_f(listOf(nmsrt_bam))
     return pbc_qc
 }
-fun CmdRunner.pbc_qc_se(bam:String,output: Path):String{
+fun CmdRunner.pbc_qc_se(bam:String,mito_chr_name:String,output: Path):String{
     val pbc_qc = "${output}.pbc.qc"//.format(prefix)
 
     var cmd = "bedtools bamtobed -i ${bam} | "
     cmd += "awk \'BEGIN{{OFS='\\t'}}{{print $1,$2,$3,$6}}\' | "
-    cmd += "grep -v 'chrM' | sort | uniq -c | "
+    cmd += "grep -v \'${mito_chr_name}\' | sort | uniq -c | "
     cmd += "awk \'BEGIN{{mt=0;m0=0;m1=0;m2=0}} ($1==1){{m1=m1+1}} "
     cmd += "($1==2){{m2=m2+1}} {{m0=m0+1}} {{mt=mt+$1}} END{{m1_m2=-1.0; "
     cmd += "if(m2>0) m1_m2=m1/m2; "
@@ -200,11 +203,12 @@ fun CmdRunner.mark_dup_picard(bam:String,output: Path):dup_sambamba{
     val dup_qc = "${output}.dup.qc"
 
 
-    var cmd = "java -Xmx4G -jar "
+    var cmd = "java -Xmx4G -XX:ParallelGCThreads=1 -jar "
     cmd += locate_picard()
     cmd += " MarkDuplicates "
     cmd += "INPUT=${bam} OUTPUT=${dupmark_bam} "
     cmd += "METRICS_FILE=${dup_qc} VALIDATION_STRINGENCY=LENIENT "
+    cmd += "USE_JDK_DEFLATER=TRUE USE_JDK_INFLATER=TRUE "
     cmd += "ASSUME_SORTED=true REMOVE_DUPLICATES=false"
 
     this.run(cmd)
@@ -246,7 +250,7 @@ fun  CmdRunner.make_mito_dup_log(dupmark_bam:String, output: Path):String {
     val mito_dup_log = "${output}.mito_dup.txt"
 
     // Get the mitochondrial reads that are marked duplicates
-    val cmd1 = "printf \"mito_dups\\t$(samtools view -f 1024 -c ${dupmark_bam} chrM)\\n\" > ${mito_dup_log}".format(dupmark_bam, mito_dup_log)
+    val cmd1 = "printf \"mito_dups\\t$(samtools view -f 1024 -c ${dupmark_bam} chrM)\\n\" > ${mito_dup_log}"
 
     this.run(cmd1)
 

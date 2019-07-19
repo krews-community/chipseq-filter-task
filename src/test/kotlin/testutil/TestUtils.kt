@@ -1,17 +1,14 @@
 package testutil
 
 import java.nio.file.*
-import mu.KotlinLogging
 import util.CmdRunner
 import util.*
 
-
-private val log = KotlinLogging.logger {}
 val cmdRunner = TestCmdRunner()
 
 class TestCmdRunner : CmdRunner {
-    override fun run(cmd: String) = exec("docker", "exec", "chipseq-base", "sh", "-c", cmd)
-    override fun runCommand(cmd: String):String? = getCommandOutput("docker", "exec", "chipseq-base", "sh", "-c", cmd)
+    override fun run(cmd: String) = exec("docker", "exec", "chipseq-filter-base", "sh", "-c", cmd)
+    override fun runCommand(cmd: String):String? = getCommandOutput("docker", "exec", "chipseq-filter-base", "sh", "-c", cmd)
 
 }
 
@@ -40,4 +37,8 @@ fun cleanupTest() {
     if (Files.exists(testOutputDir)) {
         Files.walk(testOutputDir).sorted(Comparator.reverseOrder()).forEach { Files.delete(it) }
     }
+}
+
+fun CopyOpt() {
+    copyDirectory(testOutputDir, testOutputResourcesDir)
 }
