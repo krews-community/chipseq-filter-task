@@ -40,6 +40,7 @@ fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:
         } else {
             throw Exception("Invalid dup marker ${dupeMarker}")
         }
+        tmpFiles.add(dupS.dupmark_bam)
 
         tmpFiles.add(filt_bam)
         log.info { "Removing Dupes" }
@@ -52,7 +53,7 @@ fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:
         samtools_index(dupS.dupmark_bam)
         tmpFiles.add(dupS.dupmark_bam+".bai")
     }
-    tmpFiles.add(dupS.dupmark_bam)
+
     val sbi = sambamba_index(nodup_bam,parallelism)
     val sbf  = sambamba_flagstat(nodup_bam,parallelism,output)
     var pbc_qc:String
@@ -71,7 +72,9 @@ fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:
         // ('Making mito dup log...')
         val mito_dup_log = make_mito_dup_log(dupS.dupmark_bam, output)
     }
-    rm_f(tmpFiles)
+    if(tmpFiles.size>0) {
+        rm_f(tmpFiles)
+    }
 
 }
 fun CmdRunner.samtools_index(bam:String):String
@@ -87,12 +90,12 @@ fun CmdRunner.pbc_qc_pe(bam:String, nth:Int,mito_chr_name:String,output: Path):S
     val nmsrt_bam = sambamba_name_sort(bamPath, nth, output)
     var cmd = "bedtools bamtobed -bedpe -i ${nmsrt_bam} | "
     cmd += "awk \'BEGIN{{OFS='\\t'}}{{print $1,$2,$4,$6,$9,$10}}\' | "
-    cmd += "grep -v  \'${mito_chr_name}\' | sort | uniq -c | "
+    cmd += "grep -v  \'^${mito_chr_name}\\b\' | sort | uniq -c | "
     cmd += "awk \'BEGIN{{mt=0;m0=0;m1=0;m2=0}} ($1==1){{m1=m1+1}} "
     cmd += "($1==2){{m2=m2+1}} {{m0=m0+1}} {{mt=mt+$1}} END{{m1_m2=-1.0; "
-    cmd += "if(m2>0) m1_m2=m1/m2; "
+    cmd += "if(m2>0) m1_m2=m1/m2; m0_mt=0; if (mt>0) m0_mt=m0/mt; m1_m0=0; if (m0>0) m1_m0=m1/m0; "
     cmd += "printf \"%d\\t%d\\t%d\\t%d\\t%f\\t%f\\t%f\\n\""
-    cmd += ",mt,m0,m1,m2,m0/mt,m1/m0,m1_m2}}\' > ${pbc_qc}"
+    cmd += ",mt,m0,m1,m2,m0_mt,m1_m0,m1_m2}}\' > ${pbc_qc}"
 
     this.run(cmd)
     rm_f(listOf(nmsrt_bam))
@@ -103,12 +106,12 @@ fun CmdRunner.pbc_qc_se(bam:String,mito_chr_name:String,output: Path):String{
 
     var cmd = "bedtools bamtobed -i ${bam} | "
     cmd += "awk \'BEGIN{{OFS='\\t'}}{{print $1,$2,$3,$6}}\' | "
-    cmd += "grep -v \'${mito_chr_name}\' | sort | uniq -c | "
+    cmd += "grep -v \'^${mito_chr_name}\\b\' | sort | uniq -c | "
     cmd += "awk \'BEGIN{{mt=0;m0=0;m1=0;m2=0}} ($1==1){{m1=m1+1}} "
     cmd += "($1==2){{m2=m2+1}} {{m0=m0+1}} {{mt=mt+$1}} END{{m1_m2=-1.0; "
-    cmd += "if(m2>0) m1_m2=m1/m2; "
+    cmd += "if(m2>0) m1_m2=m1/m2; m0_mt=0; if (mt>0) m0_mt=m0/mt; m1_m0=0; if (m0>0) m1_m0=m1/m0; "
     cmd += "printf \"%d\\t%d\\t%d\\t%d\\t%f\\t%f\\t%f\\n\","
-    cmd += "mt,m0,m1,m2,m0/mt,m1/m0,m1_m2}}\' > ${pbc_qc}"
+    cmd += "mt,m0,m1,m2,m0_mt,m1_m0,m1_m2}}\' > ${pbc_qc}"
     this.run(cmd)
     return pbc_qc
 
@@ -163,11 +166,9 @@ fun CmdRunner.rm_unmappped_lowq_reads_pe(bam:Path, multimapping:Int, mapq_thresh
 
         var cmd1 = "samtools view -F 1804 -f 2 -q ${mapq_thresh} -u ${bam} | "
         cmd1 += "sambamba sort -n /dev/stdin -o ${tmp_filt_bam} -t ${nth}"
-
         this.run(cmd1)
 
         val cmd2 = "samtools fixmate -r ${tmp_filt_bam} ${fixmate_bam}"
-
         this.run(cmd2)
 
     }
@@ -184,6 +185,7 @@ fun CmdRunner.rm_f(tmpFiles: List<String>)
     val cmd ="rm -f ${tmpFiles.joinToString(" ")}"
     this.run(cmd)
 }
+
 fun CmdRunner.mark_dup_sambamba(bam:String,nth:Int,output: Path):dup_sambamba{
   //  # strip extension appended in the previous step
    // val prefix = strip_ext(bam,'filt')
