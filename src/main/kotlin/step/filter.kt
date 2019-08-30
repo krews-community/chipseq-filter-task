@@ -9,11 +9,13 @@ import kotlin.math.max
 private val log = KotlinLogging.logger {}
 data class dup_sambamba(val dupmark_bam:String, val dup_qc:String )
 
-fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:Boolean,nodupRemoval:Boolean,multiMapping:Int,parallelism:Int,mito_chr_name:String,output: Path) {
-    log.info { "Make output Diretory" }
+fun CmdRunner.filter(bamFile:Path,spongeFile:Path?=null,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:Boolean,nodupRemoval:Boolean,multiMapping:Int,parallelism:Int,mito_chr_name:String,output: Path) {
+    log.info { "Make output Directory" }
     Files.createDirectories(output.parent)
 
     var filt_bam:String
+    var sponges_bam:String
+    var  dupmarkBam:String=""
     var tmpFiles = mutableListOf<String>() //Delete temp files at the end
     log.info { "Removing unmapped/low-quality reads..." }
     if(pairedEnd==true)
@@ -41,41 +43,75 @@ fun CmdRunner.filter(bamFile:Path,dupeMarker:DupMarker,mapqThresh:Int,pairedEnd:
             throw Exception("Invalid dup marker ${dupeMarker}")
         }
         tmpFiles.add(dupS.dupmark_bam)
+         dupmarkBam = dupS.dupmark_bam
+        //remove sponges
+        if(spongeFile!==null)
+        {
+            if(pairedEnd)
+            {
+                sponges_bam = rm_sponges_pe(dupS.dupmark_bam,spongeFile,parallelism,output)
+            } else {
+                sponges_bam = rm_sponges_se(dupS.dupmark_bam,spongeFile,parallelism,output)
+            }
+            dupmarkBam = sponges_bam
+        }
 
         tmpFiles.add(filt_bam)
         log.info { "Removing Dupes" }
         if(pairedEnd==true)
         {
-            nodup_bam = rm_dup_pe(dupS.dupmark_bam,parallelism,output)
+            nodup_bam = rm_dup_pe(dupmarkBam,parallelism,output)
         } else {
-            nodup_bam = rm_dup_se(dupS.dupmark_bam,parallelism,output)
+            nodup_bam = rm_dup_se(dupmarkBam,parallelism,output)
         }
-        samtools_index(dupS.dupmark_bam)
-        tmpFiles.add(dupS.dupmark_bam+".bai")
+      //  samtools_index(dupmarkBam)
+      //  tmpFiles.add(dupmarkBam+".bai")
     }
 
-    val sbi = sambamba_index(nodup_bam,parallelism)
-    val sbf  = sambamba_flagstat(nodup_bam,parallelism,output)
-    var pbc_qc:String
+     sambamba_index(nodup_bam,parallelism)
+     sambamba_flagstat(nodup_bam,parallelism,output)
     if(nodupRemoval==false)
     {
-        if(pairedEnd==true)
+        if(pairedEnd)
         {
-            pbc_qc = pbc_qc_pe(dupS.dupmark_bam,Math.max(1,parallelism-2),mito_chr_name,output)
+           pbc_qc_pe(dupmarkBam,Math.max(1,parallelism-2),mito_chr_name,output)
 
         }else {
-            pbc_qc = pbc_qc_se(dupS.dupmark_bam,mito_chr_name,output)
+           pbc_qc_se(dupmarkBam,mito_chr_name,output)
         }
     }
     if(nodupRemoval==false) {
 
         // ('Making mito dup log...')
-        val mito_dup_log = make_mito_dup_log(dupS.dupmark_bam, output)
+        val mito_dup_log = make_mito_dup_log(dupmarkBam, output)
     }
     if(tmpFiles.size>0) {
         rm_f(tmpFiles)
     }
 
+}
+fun CmdRunner.rm_sponges_pe(dupmark_bam:String,spongeFile:Path,parallelism:Int,output:Path):String
+{
+    val sponges_bam ="${output}.sponges.bam"
+    val sponges_srt_bam ="${output}.sponges.srt.bam"
+    val fixmate_sponges_bam  ="${output}.fixmate.sponges.bam"
+    var cmd ="samtools view -h ${dupmark_bam} | grep -vF -f ${spongeFile} - | samtools view -@ ${parallelism} -t ${output} -b -o ${sponges_bam} - "
+    this.run(cmd)
+    val cmd1 = "samtools sort -@ ${parallelism}  -T ${output} -n -o ${sponges_srt_bam}  ${sponges_bam} "
+    this.run(cmd1)
+    val cmd2= "samtools fixmate -r ${sponges_srt_bam} ${fixmate_sponges_bam}"
+    this.run(cmd2)
+
+    return fixmate_sponges_bam
+}
+fun CmdRunner.rm_sponges_se(dupmark_bam:String,spongeFile:Path,parallelism:Int,output:Path):String
+{
+    val sponges_bam ="${output}.sponges.bam"
+    var cmd ="samtools view -h ${dupmark_bam} | grep -vF -f ${spongeFile} - | samtools view -@ ${parallelism} -t ${output} -b -o ${sponges_bam} - "
+    this.run(cmd)
+
+
+    return sponges_bam
 }
 fun CmdRunner.samtools_index(bam:String):String
 {
@@ -164,12 +200,13 @@ fun CmdRunner.rm_unmappped_lowq_reads_pe(bam:Path, multimapping:Int, mapq_thresh
         this.run(cmd2)
     } else {
 
-        var cmd1 = "samtools view -F 1804 -f 2 -q ${mapq_thresh} -u ${bam} | "
+        var cmd1 = "samtools view -@ ${nth} -F1804 -f2 -q ${mapq_thresh} -h  -u ${bam} | "
         cmd1 += "sambamba sort -n /dev/stdin -o ${tmp_filt_bam} -t ${nth}"
         this.run(cmd1)
 
         val cmd2 = "samtools fixmate -r ${tmp_filt_bam} ${fixmate_bam}"
         this.run(cmd2)
+
 
     }
     rm_f(listOf(tmp_filt_bam))
@@ -224,13 +261,15 @@ fun CmdRunner.locate_picard():String?{
 }
 fun CmdRunner.rm_dup_se(dupmark_bam:String, nth:Int, output:Path):String{
     val nodup_bam = "${output}.nodup.bam"
-    val cmd = "samtools view -@ ${nth} -F 1804 -b ${dupmark_bam} > ${nodup_bam}"
+    val cmd = "samtools view -@ ${nth} -F 1804 -b ${dupmark_bam} > ${nodup_bam} "
     this.run(cmd)
     return nodup_bam
 }
 fun CmdRunner.rm_dup_pe(dupmark_bam:String, nth:Int, output:Path):String{
     val nodup_bam = "${output}.nodup.bam"//.format(prefix)
-    val cmd = "samtools view -@ ${nth} -F 1804 -f 2 -b ${dupmark_bam} > ${nodup_bam}"
+    //val cmd = "samtools view -@ ${nth} -F 1804 -f 2 -b ${dupmark_bam} > ${nodup_bam}" //for hg38
+    val cmd = "samtools view -@ ${nth} -F 1804 -f 2 -b -u ${dupmark_bam} | samtools sort -@ ${nth} -T ${output} -o ${nodup_bam} - "
+
     this.run(cmd)
     return nodup_bam
 }

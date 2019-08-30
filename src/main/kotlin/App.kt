@@ -13,6 +13,8 @@ class Cli : CliktCommand() {
 
     private val bamFile: Path by option("-bam", help = "path for raw BAM file.")
         .path().required()
+    private val spongeFile: Path? by option("-sponge", help = "path for sponge name file.")
+            .path()
     private val dupeMarker: DupMarker by option("-dupMarker", help = "Dupe marker for filtering mapped reads in BAM.")
             .choice(DupMarker.values().associateBy { it.lowerHyphenName }).default(DupMarker.picard)
     private val outputPrefix: String by option("-outputPrefix", help = "output file name prefix; defaults to 'output'").default("output")
@@ -29,7 +31,7 @@ class Cli : CliktCommand() {
     override fun run() {
         val cmdRunner = DefaultCmdRunner()
 
-        cmdRunner.runTask(bamFile,dupeMarker,outputPrefix,mapqThresh,pairedEnd,nodupRemoval,multiMapping,parallelism,mito_chr_name, outDir)
+        cmdRunner.runTask(bamFile,spongeFile,dupeMarker,outputPrefix,mapqThresh,pairedEnd,nodupRemoval,multiMapping,parallelism,mito_chr_name, outDir)
     }
 }
 
@@ -39,8 +41,7 @@ class Cli : CliktCommand() {
  * @param bwaInputs bwa Input
  * @param outDir Output Path
  */
-fun CmdRunner.runTask(bamFile:Path,dupeMarker:DupMarker,outputPrefix:String,mapqThresh:Int,pairedEnd:Boolean,nodupRemoval:Boolean,multiMapping:Int,parallelism:Int,mito_chr_name:String, outDir: Path) {
+fun CmdRunner.runTask(bamFile:Path,spongeFile:Path?,dupeMarker:DupMarker,outputPrefix:String,mapqThresh:Int,pairedEnd:Boolean,nodupRemoval:Boolean,multiMapping:Int,parallelism:Int,mito_chr_name:String, outDir: Path) {
 
-        filter(bamFile,dupeMarker,mapqThresh,pairedEnd,nodupRemoval,multiMapping,parallelism,mito_chr_name, outDir.resolve(outputPrefix))
-
+        filter(bamFile,spongeFile,dupeMarker,mapqThresh,pairedEnd,nodupRemoval,multiMapping,parallelism,mito_chr_name, outDir.resolve(outputPrefix))
 }
