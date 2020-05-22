@@ -7,9 +7,9 @@ RUN apt-get update && apt-get install -y \
     zlib1g-dev \
     python \
     git && \
-    wget https://github.com/biod/sambamba/releases/download/v0.6.8/sambamba-0.6.8-linux-static.gz && \
+    wget https://github.com/biod/sambamba/releases/download/v0.7.1/sambamba-0.7.1-linux-static.gz && \
     wget https://github.com/ENCODE-DCC/chip-seq-pipeline2/raw/master/src/assign_multimappers.py && mv assign_multimappers.py /bin && chmod 755 /bin/assign_multimappers.py && \
-    gunzip sambamba-0.6.8-linux-static.gz && mv sambamba-0.6.8-linux-static /bin/sambamba && chmod 755 /bin/sambamba && \
+    gunzip sambamba-0.7.1-linux-static.gz && mv sambamba-0.7.1-linux-static /bin/sambamba && chmod 755 /bin/sambamba && \
     wget https://github.com/broadinstitute/picard/releases/download/2.18.14/picard.jar -O /bin/picard.jar && chmod +x /bin/picard.jar && \
     wget https://github.com/samtools/samtools/releases/download/1.9/samtools-1.9.tar.bz2 && \
     tar xvjf samtools-1.9.tar.bz2 && cd samtools-1.9 && \

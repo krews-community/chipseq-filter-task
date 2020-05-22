@@ -156,7 +156,7 @@ fun CmdRunner.sambamba_name_sort(bam:Path,nth:Int,output:Path):String{
     val opt = output.parent
     val prefix= opt.resolve(strip_ext_bam(bam.fileName.toString()))
     val nmsrt_bam = "${prefix}.nmsrt.bam"
-    val cmd = "sambamba sort -n ${bam} -o ${nmsrt_bam} -t ${nth}"
+    val cmd = "samtools sort -n ${bam} -o ${nmsrt_bam} -@ ${nth}"
     this.run(cmd)
     return nmsrt_bam
 }
@@ -171,7 +171,7 @@ fun CmdRunner.rm_unmappped_lowq_reads_se(bam:Path, multimapping:Int, mapq_thresh
         cmd2 += "$(which assign_multimappers.py) -k ${multimapping} | "
         cmd2 += "samtools view -F 1804 -Su /dev/stdin | "
 
-        cmd2 += "sambamba sort /dev/stdin -o ${filt_bam} -t ${nth}"
+        cmd2 += "samtools sort /dev/stdin -o ${filt_bam} -@ ${nth}"
 
         this.run(cmd2)
         rm_f(listOf(qname_sort_bam))
@@ -191,7 +191,7 @@ fun CmdRunner.rm_unmappped_lowq_reads_pe(bam:Path, multimapping:Int, mapq_thresh
     if(multimapping!=0)
     {
         var cmd1 = "samtools view -F 524 -f 2 -u ${bam} | "
-        cmd1 += "sambamba sort -n /dev/stdin -o ${tmp_filt_bam} -t ${nth} "
+        cmd1 += "samtools sort -n /dev/stdin -o ${tmp_filt_bam} -@ ${nth} "
         this.run(cmd1)
 
         var cmd2 = "samtools view -h ${tmp_filt_bam} -@ ${nth} | "
@@ -201,7 +201,7 @@ fun CmdRunner.rm_unmappped_lowq_reads_pe(bam:Path, multimapping:Int, mapq_thresh
     } else {
 
         var cmd1 = "samtools view -@ ${nth} -F1804 -f2 -q ${mapq_thresh} -h  -u ${bam} | "
-        cmd1 += "sambamba sort -n /dev/stdin -o ${tmp_filt_bam} -t ${nth}"
+        cmd1 += "samtools sort -n /dev/stdin -o ${tmp_filt_bam} -@ ${nth}"
         this.run(cmd1)
 
         val cmd2 = "samtools fixmate -r ${tmp_filt_bam} ${fixmate_bam}"
@@ -211,7 +211,7 @@ fun CmdRunner.rm_unmappped_lowq_reads_pe(bam:Path, multimapping:Int, mapq_thresh
     }
     rm_f(listOf(tmp_filt_bam))
     var cmd = "samtools view -F 1804 -f 2 -u ${fixmate_bam} | "
-    cmd += "sambamba sort /dev/stdin -o ${filt_bam} -t ${nth}"
+    cmd += "samtools sort /dev/stdin -o ${filt_bam} -@ ${nth}"
 
     this.run(cmd)
     rm_f(listOf(fixmate_bam))
@@ -229,9 +229,8 @@ fun CmdRunner.mark_dup_sambamba(bam:String,nth:Int,output: Path):dup_sambamba{
     val dupmark_bam = "${output}.dupmark.bam"
     val dup_qc = "${output}.dup.qc"
 
-   var cmd = "sambamba markdup -t ${nth} --hash-table-size=17592186044416 "
-    cmd += "--overflow-list-size=20000000 "
-    cmd += "--io-buffer-size=256 ${bam} ${dupmark_bam} 2> ${dup_qc}"
+   var cmd = "samtools markdup -s -@ ${nth} "
+    cmd += "${bam} ${dupmark_bam} 2> ${dup_qc}"
     this.run(cmd)
     return dup_sambamba(dupmark_bam,dup_qc)
 }
@@ -248,7 +247,8 @@ fun CmdRunner.mark_dup_picard(bam:String,output: Path):dup_sambamba{
     cmd += "INPUT=${bam} OUTPUT=${dupmark_bam} "
     cmd += "METRICS_FILE=${dup_qc} VALIDATION_STRINGENCY=LENIENT "
     cmd += "USE_JDK_DEFLATER=TRUE USE_JDK_INFLATER=TRUE "
-    cmd += "ASSUME_SORTED=true REMOVE_DUPLICATES=false"
+    cmd += "ASSUME_SORTED=true REMOVE_DUPLICATES=false "
+    cmd += "TMP_DIR=/tmp "
 
     this.run(cmd)
     return dup_sambamba(dupmark_bam,dup_qc)
@@ -276,14 +276,14 @@ fun CmdRunner.rm_dup_pe(dupmark_bam:String, nth:Int, output:Path):String{
 
 fun CmdRunner.sambamba_index(bam:String,nth:Int):String {
     val bai ="$bam.bai"
-    this.run("sambamba index ${bam} -t ${nth}")
+    this.run("samtools index ${bam} -@ ${nth}")
     return bai
 }
 fun CmdRunner.sambamba_flagstat(bam:String,nth:Int,output:Path):String
 {
     val bamPath= output.parent.resolve(strip_ext_bam(bam))
     val flagstat_qc ="$bamPath.flagstat.qc"
-    this.run("sambamba flagstat ${bam} -t ${nth} > ${flagstat_qc}")
+    this.run("samtools flagstat ${bam} -@ ${nth} > ${flagstat_qc}")
     return flagstat_qc
 }
 fun  CmdRunner.make_mito_dup_log(dupmark_bam:String, output: Path):String {
